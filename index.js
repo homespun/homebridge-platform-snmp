@@ -161,7 +161,6 @@ var ServersCheck = function (platform, agentId, service) {
   self.manufacturer = 'ServersCheck'
 
   self._refresh(function (err, properties) {
-console.log('\n\nrefresh errP=' + (!!err) + ' properties=' + JSON.stringify(properties, null, 2))
     var accessory
 
     if (err) return self.platform.log.error('refresh', underscore.extend({ agentId: self.agentId }, err))
@@ -291,7 +290,6 @@ ServersCheck.prototype._normalize = function (name, value) {
 ServersCheck.prototype._getState = function (property, callback) {
   var self = this
 
-  console.log('\n\ngetState ' + property)
   self.cache.get('properties', function (err, properties) {
     var f = function (properties, cacheP) {
       var fpc
