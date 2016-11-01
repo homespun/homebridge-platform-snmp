@@ -1,0 +1,26 @@
+{ "name"                         : "homebridge-platform-snmp"
+, "version"                      : "0.1.0"
+, "description"                  : "An SNMP platform plugin for Homebridge: https://github.com/nfarina/homebridge"
+, "main"                         : "index.js"
+, "scripts"                      : { "lint" : "jshint package.json *.js" }
+, "license"                      : "MIT"
+, "keywords"                     : [ "homebridge-plugin", "snmp", "serverscheck" ]
+, "repository"                   :
+  { "type"                       : "git"
+  , "url"                        : "git://github.com/homespun/homebridge-platform-snmp.git"
+  }
+, "bugs"                         : { "url": "https://github.com/homespun/homebridge-platform-snmp/issues" }
+, "engines"                      :
+  { "node"                       : ">=0.12.0"
+  , "homebridge"                 : ">=0.3.1"
+  }
+, "dependencies"                 :
+  { "arp-a"                      : "0.5.1"
+  , "hap-nodejs-community-types" : "https://github.com/homespun/hap-nodejs-community-types.git"
+  , "homespun-discovery"         : "0.1.3"
+  , "node-cache"                 : "3.0.0"
+  , "snmp-native"                : "1.0.18"
+  , "underscore"                 : "1.8.3"
+  , "util"                       : ">= 0.10.3"
+  }
+}
