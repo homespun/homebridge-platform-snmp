@@ -349,7 +349,7 @@ ServersCheck.prototype._setServices = function (accessory) {
   underscore.keys(self.capabilities).forEach(function (key) {
     var f =
     { airflow:
-         function () {
+        function () {
           findOrCreateService(CommunityTypes.AirFlowSensor, function (service) {
             service.setCharacteristic(Characteristic.Name, self.name + ' Air Flow')
             service.getCharacteristic(CommunityTypes.AirFlow)
@@ -358,7 +358,7 @@ ServersCheck.prototype._setServices = function (accessory) {
          }
 
      , noise:
-         function () {
+        function () {
           findOrCreateService(CommunityTypes.NoiseLevelSensor, function (service) {
             service.setCharacteristic(Characteristic.Name, self.name + ' Noise Level')
             service.getCharacteristic(CommunityTypes.NoiseLevel)
@@ -367,9 +367,9 @@ ServersCheck.prototype._setServices = function (accessory) {
          }
 
      , 'particles.2_5':
-         function () {
+        function () {
           findOrCreateService(Service.AirQualitySensor, function (service) {
-// temporary
+// TBD: temporary
             service.setCharacteristic(Characteristic.Name, self.name + ' Air Quality')
                    .setCharacteristic(Characteristic.AirParticulateSize, Characteristic.AirParticulateSize._2_5_M)
             service.getCharacteristic(Characteristic.AirQuality)
