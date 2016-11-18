@@ -19,20 +19,20 @@ Future versions may allow you to specify addressing and authentication informati
 If this is your first time with `homebridge`,
 this will suffice:
 
-{ "bridge":
-  { "name": "Homebridge"
-  , "username": "CC:22:3D:E3:CE:30"
-  , "port": 51826
-  , "pin": "031-45-154"
-  }
-, "description": ""
-, "accessories":
-  [
-  ]
-, "platforms":
-  [
-  ]
-}
+    { "bridge":
+      { "name": "Homebridge"
+      , "username": "CC:22:3D:E3:CE:30"
+      , "port": 51826
+      , "pin": "031-45-154"
+      }
+    , "description": ""
+    , "accessories":
+      [
+      ]
+    , "platforms":
+      [
+      ]
+    }
 
 # Supported Agents
 At present,
