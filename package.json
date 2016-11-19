@@ -1,5 +1,5 @@
 { "name"                         : "homebridge-platform-snmp"
-, "version"                      : "0.1.1"
+, "version"                      : "0.1.2"
 , "description"                  : "An SNMP platform plugin for Homebridge: https://github.com/nfarina/homebridge"
 , "main"                         : "index.js"
 , "scripts"                      : { "lint" : "jshint package.json *.js" }
