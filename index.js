@@ -22,7 +22,7 @@ module.exports = function (homebridge) {
   CommunityTypes = require('hap-nodejs-community-types')(homebridge)
   UUIDGen        = homebridge.hap.uuid
 
- homebridge.registerPlatform('homebridge-platform-snmp', 'SNMP', SNMP, true)
+  homebridge.registerPlatform('homebridge-platform-snmp', 'SNMP', SNMP, true)
 }
 
 
