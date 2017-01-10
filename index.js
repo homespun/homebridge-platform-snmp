@@ -1,4 +1,4 @@
-/* jshint asi: true */
+/* jshint asi: true, node: true, laxbreak: true, laxcomma: true, undef: true, unused: true */
 
 var NodeCache   = require('node-cache')
   , arp         = require('arp-a')
@@ -34,8 +34,9 @@ var SNMP = function (log, config, api) {
   this.api = api
 
   this.options = underscore.defaults(this.config.options || {}, { verboseP: false })
-  this.discoveries = {}
+
   this.agents = {}
+  this.discoveries = {}
 
   discovery.init()
   if (api) this.api.on('didFinishLaunching', this._didFinishLaunching.bind(this))
@@ -85,8 +86,10 @@ SNMP.prototype._addAccessory = function (agent) {
 
   agent.attachAccessory.bind(agent)(accessory)
 
-  self.api.registerPlatformAccessories('homebridge-platform-snmp', 'SNMP', [ accessory ])
-  self.log('addAccessory', underscore.pick(agent, [ 'uuid', 'name', 'manufacturer', 'model', 'serialNumber' ]))
+  if (!self.discoveries[accessory.UUID]) {
+    self.api.registerPlatformAccessories('homebridge-platform-snmp', 'SNMP', [ accessory ])
+    self.log('addAccessory', underscore.pick(agent, [ 'uuid', 'name', 'manufacturer', 'model', 'serialNumber' ]))
+  }
 }
 
 SNMP.prototype.configurationRequestHandler = function (context, request, callback) {/* jshint unused: false */
@@ -130,6 +133,7 @@ Agent.prototype.attachAccessory = function (accessory) {
   this.platform.log('attachAccessory', underscore.pick(this, [ 'uuid', 'name', 'manufacturer', 'model', 'serialNumber' ]))
 }
 
+// not used
 Agent.prototype.onlineP = function (callback) {
   var self = this
 
@@ -178,6 +182,77 @@ var ServersCheck = function (platform, agentId, service) {
   })
 }
 util.inherits(ServersCheck, Agent)
+
+ServersCheck.prototype._setServices = function (accessory) {
+  var self = this
+
+  var findOrCreateService = function (P, callback) {
+    var newP
+    var service = accessory.getService(P)
+
+    if (!service) {
+      newP = true
+      service = new P()
+    }
+    callback(service)
+
+    if (newP) accessory.addService(service, self.name)
+  }
+
+  findOrCreateService(Service.AccessoryInformation, function (service) {
+    service.setCharacteristic(Characteristic.Name, self.name)
+           .setCharacteristic(Characteristic.Manufacturer, self.manufacturer)
+           .setCharacteristic(Characteristic.Model, self.model)
+           .setCharacteristic(Characteristic.SerialNumber, self.serialNumber)
+  })
+
+  underscore.keys(self.capabilities).forEach(function (key) {
+    var f =
+    { airflow:
+        function () {
+          findOrCreateService(CommunityTypes.AirFlowSensor, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Air Flow')
+            service.getCharacteristic(CommunityTypes.AirFlow)
+                   .on('get', function (callback) { self._getState.bind(self)('airflow', callback) })
+           })
+         }
+
+     , noise:
+        function () {
+          findOrCreateService(CommunityTypes.NoiseLevelSensor, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Noise Level')
+            service.getCharacteristic(CommunityTypes.NoiseLevel)
+                   .on('get', function (callback) { self._getState.bind(self)('noise', callback) })
+           })
+         }
+
+     , 'particles.2_5':
+        function () {
+          findOrCreateService(Service.AirQualitySensor, function (service) {
+// TBD: temporary
+            service.setCharacteristic(Characteristic.Name, self.name + ' Air Quality')
+                   .setCharacteristic(Characteristic.AirParticulateSize, Characteristic.AirParticulateSize._2_5_M)
+            service.getCharacteristic(Characteristic.AirQuality)
+                   .on('get', function (callback) { self._getState.bind(self)('aqi', callback) })
+            service.getCharacteristic(Characteristic.AirParticulateDensity)
+                   .on('get', function (callback) { self._getState.bind(self)('particles.2_5', callback) })
+            service.getCharacteristic(Characteristic.PM2_5Density)
+                   .on('get', function (callback) { self._getState.bind(self)('particles.2_5', callback) })
+          })
+        }
+
+    , temperature:
+        function () {
+          findOrCreateService(Service.TemperatureSensor, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Temperature')
+            service.getCharacteristic(Characteristic.CurrentTemperature)
+                   .on('get', function (callback) { self._getState.bind(self)('temperature', callback) })
+          })
+        }
+    }[key] || function () { self.platform.log.warn('setServices: no Service for ' + key) }
+    f()
+  })
+}
 
 ServersCheck.prototype._refresh = function (callback) {
   var self = this
@@ -322,75 +397,5 @@ ServersCheck.prototype._getState = function (property, callback) {
     })
   })
 }
-
-ServersCheck.prototype._setServices = function (accessory) {
-  var self = this
-
-  var findOrCreateService = function (P, callback) {
-    var newP
-    var service = accessory.getService(P)
-
-    if (!service) {
-      newP = true
-      service = new P()
-    }
-    callback(service)
-
-    if (newP) accessory.addService(service, self.name)
-  }
-
-  findOrCreateService(Service.AccessoryInformation, function (service) {
-    service.setCharacteristic(Characteristic.Name, self.name)
-           .setCharacteristic(Characteristic.Manufacturer, self.manufacturer)
-           .setCharacteristic(Characteristic.Model, self.model)
-           .setCharacteristic(Characteristic.SerialNumber, self.serialNumber)
-  })
-
-  underscore.keys(self.capabilities).forEach(function (key) {
-    var f =
-    { airflow:
-        function () {
-          findOrCreateService(CommunityTypes.AirFlowSensor, function (service) {
-            service.setCharacteristic(Characteristic.Name, self.name + ' Air Flow')
-            service.getCharacteristic(CommunityTypes.AirFlow)
-                   .on('get', function (callback) { self._getState.bind(self)('airflow', callback) })
-           })
-         }
-
-     , noise:
-        function () {
-          findOrCreateService(CommunityTypes.NoiseLevelSensor, function (service) {
-            service.setCharacteristic(Characteristic.Name, self.name + ' Noise Level')
-            service.getCharacteristic(CommunityTypes.NoiseLevel)
-                   .on('get', function (callback) { self._getState.bind(self)('noise', callback) })
-           })
-         }
-
-     , 'particles.2_5':
-        function () {
-          findOrCreateService(Service.AirQualitySensor, function (service) {
-// TBD: temporary
-            service.setCharacteristic(Characteristic.Name, self.name + ' Air Quality')
-                   .setCharacteristic(Characteristic.AirParticulateSize, Characteristic.AirParticulateSize._2_5_M)
-            service.getCharacteristic(Characteristic.AirQuality)
-                   .on('get', function (callback) { self._getState.bind(self)('aqi', callback) })
-            service.getCharacteristic(Characteristic.AirParticulateDensity)
-                   .on('get', function (callback) { self._getState.bind(self)('particles.2_5', callback) })
-          })
-        }
-
-    , temperature:
-        function () {
-          findOrCreateService(Service.TemperatureSensor, function (service) {
-            service.setCharacteristic(Characteristic.Name, self.name + ' Temperature')
-            service.getCharacteristic(Characteristic.CurrentTemperature)
-                   .on('get', function (callback) { self._getState.bind(self)('temperature', callback) })
-          })
-        }
-    }[key] || function () { self.platform.log.warn('setServices: no Service for ' + key) }
-    f()
-  })
-}
-
 
 var sysObjectIDs = { '1.3.6.1.4.1.17095': ServersCheck }

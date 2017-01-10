@@ -8,6 +8,22 @@ Run these commands:
     % sudo npm install -g homebridge
     % sudo npm install -g homebridge-platform-snmp
 
+On Linux, you might see this output for the second command:
+
+    npm ERR! pcap2@3.0.4 install: node-gyp rebuild
+    npm ERR! Exit status 1
+    npm ERR!
+
+If so, please try
+
+    % apt-get install libpcap-dev
+
+and try
+
+    % sudo npm install -g homebridge-accessory-neurio
+
+again!
+
 # Configuration
 If you're already running `homebridge` on your system,
 then you already have a `~/.homebridge/config.json` file and no configuration is needed!
