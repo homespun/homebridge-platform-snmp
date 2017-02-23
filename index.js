@@ -229,13 +229,9 @@ ServersCheck.prototype._setServices = function (accessory) {
      , 'particles.2_5':
         function () {
           findOrCreateService(Service.AirQualitySensor, function (service) {
-// TBD: temporary
             service.setCharacteristic(Characteristic.Name, self.name + ' Air Quality')
-                   .setCharacteristic(Characteristic.AirParticulateSize, Characteristic.AirParticulateSize._2_5_M)
             service.getCharacteristic(Characteristic.AirQuality)
                    .on('get', function (callback) { self._getState.bind(self)('aqi', callback) })
-            service.getCharacteristic(Characteristic.AirParticulateDensity)
-                   .on('get', function (callback) { self._getState.bind(self)('particles.2_5', callback) })
             service.getCharacteristic(Characteristic.PM2_5Density)
                    .on('get', function (callback) { self._getState.bind(self)('particles.2_5', callback) })
           })
