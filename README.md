@@ -20,7 +20,7 @@ If so, please try
 
 and try
 
-    % sudo npm install -g homebridge-accessory-neurio
+    % sudo npm install -g homebridge-platform-ring-video-doorbell
 
 again!
 
