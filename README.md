@@ -20,9 +20,17 @@ If so, please try
 
 and try
 
-    % sudo npm install -g homebridge-platform-ring-video-doorbell
+    % sudo npm install -gring-video-doorbell homebridge-platform-snmp
 
 again!
+
+NB: If you install homebridge like this:
+
+    sudo npm install -g --unsafe-perm homebridge
+
+Then all subsequent installations must be like this:
+
+    sudo npm install -g --unsafe-perm homebridge-platform-snmp
 
 # Configuration
 If you're already running `homebridge` on your system,
