@@ -55,6 +55,9 @@ this will suffice:
       ]
     , "platforms":
       [
+        { "platform" : "homebridge-platform-snmp"
+        , "name"     : "SNMP"
+        }
       ]
     }
 
