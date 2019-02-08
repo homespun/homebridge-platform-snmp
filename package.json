@@ -1,6 +1,6 @@
 {
   "name": "homebridge-platform-snmp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "An SNMP platform plugin for Homebridge: https://github.com/nfarina/homebridge",
   "author": {
     "name": "Marshall Rose",
@@ -31,9 +31,9 @@
     "arp-a": "0.5.1",
     "hap-nodejs-community-types": "https://github.com/homespun/hap-nodejs-community-types.git",
     "homespun-discovery": "0.2.0",
-    "node-cache": "3.0.0",
+    "node-cache": "4.2.0",
     "snmp-native": "1.0.18",
     "underscore": "1.8.3",
-    "lodash": "4.17.5"
+    "lodash": "4.17.11"
   }
 }
