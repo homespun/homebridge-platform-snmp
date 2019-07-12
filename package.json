@@ -34,6 +34,6 @@
     "node-cache": "4.2.0",
     "snmp-native": "1.0.18",
     "underscore": "1.8.3",
-    "lodash": "4.17.11"
+    "lodash": "4.17.13"
   }
 }
