@@ -8,6 +8,7 @@
   },
   "main": "index.js",
   "scripts": {
+    "developer": "DEBUG=homebridge-platform-snmp homebridge -D -U `pwd` -P `pwd`",
     "lint": "jshint package.json *.js"
   },
   "license": "MIT",
@@ -29,6 +30,7 @@
   },
   "dependencies": {
     "arp-a": "0.5.1",
+    "debug": "~2.6.9",
     "hap-nodejs-community-types": "https://github.com/homespun/hap-nodejs-community-types.git",
     "homespun-discovery": "0.2.0",
     "lodash": "4.17.13",

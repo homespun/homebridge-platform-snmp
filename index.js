@@ -1,15 +1,16 @@
-/* jshint asi: true, node: true, laxbreak: true, laxcomma: true, undef: true, unused: true */
+/* jshint asi: true, esversion: 6, node: true, laxbreak: true, laxcomma: true, undef: true, unused: true */
 
-var NodeCache   = require('node-cache')
-  , arp         = require('arp-a')
-  , discovery   = require('homespun-discovery').observers.snmp
-  , sensorTypes = require('homespun-discovery').utilities.sensortypes
-  , snmpn       = require('snmp-native')
-  , underscore  = require('underscore')
-  , util        = require('util')
+const NodeCache   = require('node-cache')
+    , arp         = require('arp-a')
+//  , debug       = require('debug')('homebridge-platform-snmp')
+    , discovery   = require('homespun-discovery').observers.snmp
+    , sensorTypes = require('homespun-discovery').utilities.sensortypes
+    , snmpn       = require('snmp-native')
+    , underscore  = require('underscore')
+    , util        = require('util')
 
 
-var Accessory
+let Accessory
   , Service
   , Characteristic
   , CommunityTypes
@@ -26,7 +27,7 @@ module.exports = function (homebridge) {
 }
 
 
-var SNMP = function (log, config, api) {
+const SNMP = function (log, config, api) {
   if (!(this instanceof SNMP)) return new SNMP(log, config, api)
 
   this.log = log
@@ -44,15 +45,15 @@ var SNMP = function (log, config, api) {
 }
 
 SNMP.prototype._didFinishLaunching = function () {
-  var self = this
+  const self = this
 
   self.observer = new discovery.Observe({ sysObjectIDs: underscore.keys(sysObjectIDs) })
   self.observer.on('error', function (err) {
     self.log.error('discovery', err)
   }).on('up', function (options, service) {
-    var agentId = service.host + ':' + service.port
-    var sysObjectID = service.packet && service.packet.pdu && service.packet.pdu.varbinds
-                        && service.packet.pdu.varbinds[1] && service.packet.pdu.varbinds[1].value
+    const agentId     = service.host + ':' + service.port
+        , sysObjectID = service.packet && service.packet.pdu && service.packet.pdu.varbinds
+                          && service.packet.pdu.varbinds[1] && service.packet.pdu.varbinds[1].value
 
     if (!self.agents[agentId]) {
       if (!sysObjectIDs[sysObjectID]) return self.log.error('unknown sysObjectID: ' + sysObjectID)
@@ -64,7 +65,7 @@ SNMP.prototype._didFinishLaunching = function () {
 
   setTimeout(function () {
     underscore.keys(self.discoveries).forEach(function (uuid) {
-      var accessory = self.discoveries[uuid]
+      const accessory = self.discoveries[uuid]
 
       self.log.warn('accessory not (yet) discovered', { UUID: uuid })
       accessory.updateReachability(false)
@@ -75,9 +76,9 @@ SNMP.prototype._didFinishLaunching = function () {
 }
 
 SNMP.prototype._addAccessory = function (agent) {
-  var self = this
+  const self = this
 
-  var accessory = new Accessory(agent.name, agent.uuid)
+  const accessory = new Accessory(agent.name, agent.uuid)
 
   accessory.on('identify', function (paired, callback) {
     self.log(accessory.displayName, ': identify request')
@@ -97,7 +98,7 @@ SNMP.prototype.configurationRequestHandler = function (context, request, callbac
 }
 
 SNMP.prototype.configureAccessory = function (accessory) {
-  var self = this
+  const self = this
 
   accessory.on('identify', function (paired, callback) {
     self.log(accessory.displayName, ': identify request')
@@ -108,8 +109,8 @@ SNMP.prototype.configureAccessory = function (accessory) {
   self.log('configureAccessory', underscore.pick(accessory, [ 'UUID', 'displayName' ]))
 }
 
-var Agent = function (platform, agentId, service) {
-  var varbinds = service.packet && service.packet.pdu && service.packet.pdu.varbinds
+const Agent = function (platform, agentId, service) {
+  const varbinds = service.packet && service.packet.pdu && service.packet.pdu.varbinds
 
   if (!(this instanceof Agent)) return new Agent(platform, agentId, service)
 
@@ -135,10 +136,10 @@ Agent.prototype.attachAccessory = function (accessory) {
 
 // not used
 Agent.prototype.onlineP = function (callback) {
-  var self = this
+  const self = this
 
-  var agent = self.platform.agents[self.agentId]
-  var oidI = discovery.Observe.prototype.oidI
+  const agent = self.platform.agents[self.agentId]
+  const oidI = discovery.Observe.prototype.oidI
 
 // TBD: set range via options
   if ((agent.timestamp + (5 * 1000)) >= underscore.now) return callback(null, true)
@@ -157,8 +158,8 @@ Agent.prototype.onlineP = function (callback) {
 }
 
 
-var ServersCheck = function (platform, agentId, service) {
-  var self = this
+const ServersCheck = function (platform, agentId, service) {
+  const self = this
 
   if (!(self instanceof ServersCheck)) return new ServersCheck(platform, agentId, service)
 
@@ -166,7 +167,7 @@ var ServersCheck = function (platform, agentId, service) {
   self.manufacturer = 'ServersCheck'
 
   self._refresh(function (err, properties) {
-    var accessory
+    let accessory
 
     if (err) return self.platform.log.error('refresh', underscore.extend({ agentId: self.agentId }, err))
 
@@ -184,12 +185,12 @@ var ServersCheck = function (platform, agentId, service) {
 util.inherits(ServersCheck, Agent)
 
 ServersCheck.prototype._setServices = function (accessory) {
-  var self = this
+  const self = this
 
-  var findOrCreateService = function (P, callback) {
-    var newP
-    var service = accessory.getService(P)
+  const findOrCreateService = function (P, callback) {
+    let newP, service
 
+    service = accessory.getService(P)
     if (!service) {
       newP = true
       service = new P()
@@ -207,7 +208,7 @@ ServersCheck.prototype._setServices = function (accessory) {
   })
 
   underscore.keys(self.capabilities).forEach(function (key) {
-    var f =
+    const f =
     { airflow:
         function () {
           findOrCreateService(CommunityTypes.AirFlowSensor, function (service) {
@@ -251,10 +252,10 @@ ServersCheck.prototype._setServices = function (accessory) {
 }
 
 ServersCheck.prototype._refresh = function (callback) {
-  var self = this
+  const self = this
 
-  var oid
-  var oidI = discovery.Observe.prototype.oidI
+  const oidI = discovery.Observe.prototype.oidI
+  let oid
 
   if (!self.uuid) {
     arp.table(function (err, entry) {
@@ -274,7 +275,7 @@ ServersCheck.prototype._refresh = function (callback) {
 
   oid = self.varbinds[1].value + '.3'
   self.session.getSubtree({ oid: oidI(oid) }, function (err, varbinds) {
-    var name, properties
+    let name, properties
 
     if (err) {
       self.platform.log.error('getSubtree', underscore.extend({ agentId: self.agentId, oid: oid }, err))
@@ -286,7 +287,7 @@ ServersCheck.prototype._refresh = function (callback) {
     name = '-'
     properties = {}
     varbinds.forEach(function (varbind) {
-      var leaf = varbind.oid[varbind.oid.length - 2]
+      const leaf = varbind.oid[varbind.oid.length - 2]
 
       if ((leaf % 4) === 1) name = varbind.value
       else if ((leaf % 4) === 2) underscore.extend(properties, self._normalize(name, varbind.value))
@@ -294,7 +295,7 @@ ServersCheck.prototype._refresh = function (callback) {
 
     oid = self.varbinds[1].value + '.11'
     self.session.getSubtree({ oid: oidI(oid) }, function (err, varbinds) {
-      var names
+      let names
 
       if (err) {
         self.platform.log.error('getSubtree', underscore.extend({ agentId: self.agentId, oid: oid }, err))
@@ -305,7 +306,7 @@ ServersCheck.prototype._refresh = function (callback) {
 
       names = {}
       varbinds.forEach(function (varbind) {
-        var leaf    = varbind.oid[varbind.oid.length - 2]
+        const leaf    = varbind.oid[varbind.oid.length - 2]
           , subtree = varbind.oid[varbind.oid.length - 3]
 
         if (leaf === 1) names[subtree] = varbind.value
@@ -335,7 +336,7 @@ Flooding (leak/flooding)
 UndefinedIO (dry contact and I/O probe)
 */
 ServersCheck.prototype._normalize = function (name, value) {
-    var f, key
+    let f, key
 
     key = { Airflow        : 'airflow'
           , 'Dust Sensor'  : 'particles.2_5'
@@ -360,19 +361,17 @@ ServersCheck.prototype._normalize = function (name, value) {
 }
 
 ServersCheck.prototype._getState = function (property, callback) {
-  var self = this
+  const self = this
 
   self.cache.get('properties', function (err, properties) {
-    var f = function (properties, cacheP) {
-      var fpc
-
+    const f = function (properties, cacheP) {
       if (!properties) {
         self.platform.log.error('getState: no properties', underscore.extend({ agentId: self.agentId, cacheP: cacheP }, err))
         return
       }
 
       if (property === 'aqi') {
-        fpc = properties['particles.2_5']
+        const fpc = properties['particles.2_5']
 // TBD: set range via options
         return (fpc < 35 ? Characteristic.AirQuality.EXCELLENT : fpc < 100 ? Characteristic.AirQuality.FAIR
                          : Characteristic.AirQuality.POOR)
@@ -394,4 +393,72 @@ ServersCheck.prototype._getState = function (property, callback) {
   })
 }
 
-var sysObjectIDs = { '1.3.6.1.4.1.17095': ServersCheck }
+
+/*
+const UPS = function (platform, agentId, service) {
+  const self = this
+
+  if (!(self instanceof UPS)) return new UPS(platform, agentId, service)
+
+  Agent.call(self, platform, agentId, service)
+  self.manufacturer = 'Schneider Electric'
+
+  console.log(JSON.stringify(service, null, 2))
+
+  process.exit(0)
+}
+util.inherits(UPS, Agent)
+
+UPS.prototype._setServices = function (accessory) {
+}
+
+UPS.prototype._refresh = function (callback) {
+}
+
+UPS.prototype._normalize = function (name, value) {
+}
+
+UPS.prototype._getState = function (property, callback) {
+}
+*/
+
+/*
+getName                upsIdentName
+getManufacturer        upsIdentManufacturer
+getModel               upsIdentModel
+getSerialNumber        battManIdentSerialNumber
+getFirmwareRevision    upsIdentUPSSoftwareVersion
+
+power:
+getInputVoltageAC      upsConfigInputVoltage
+getBatteryVoltageDC    upsBatteryVoltage
+getUPSLoadPercdent     upsEstimatedChargeRemaining
+getVolts               upsBatteryVoltage
+getVoltAmperes         upsConfigOutputVA 
+getWatts               upsInputTruePower
+getKilowattHours       
+getOutputVoltageAC     OUTPUTV
+getVoltAmperes         OUTCURNT
+getCurrentTemperature  upsBatteryTemperature
+
+battery:
+getContactSensorState  (STATFLAG & 0x08) ? CONTACT_DETECTED : CONTACT_NOT_DETECTED
+getStatusActive        LOADPCT > 0 ? ACTIVE : INACTIVE
+getStatusFault         faultP ? GENERAL_FAULT: NO_FAULT
+getEveTimesOpened
+getEveOpenDuration
+getEveCloseDuration
+getEveLastActivation
+getEveResetTotal
+getBatteryLevel        BCHARGE
+getChargingState       (STATFLAG & 0x80) ? NOT_CHARGEABLE ? ((flags & 0x10) || (BCHARGE === 100) ? NOT_CHARGING : CHARGING
+getStatusLowBattery    (STATFLAG & 0x40) ? BATTERY_LEVEL_LOW : BATTERY_LEVEL_NORMAL
+ */
+
+
+const sysObjectIDs =
+{ '1.3.6.1.4.1.17095'      : ServersCheck
+/*
+ , '1.3.6.1.4.1.318.1.3.27' : UPS
+ */
+}
