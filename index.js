@@ -214,7 +214,7 @@ ServersCheck.prototype._setServices = function (accessory) {
           findOrCreateService(CommunityTypes.AirFlowSensor, function (service) {
             service.setCharacteristic(Characteristic.Name, self.name + ' Air Flow')
             service.getCharacteristic(CommunityTypes.AirFlow)
-                   .on('get', function (callback) { self._getState.bind(self)('airflow', callback) })
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
            })
          }
 
@@ -223,7 +223,7 @@ ServersCheck.prototype._setServices = function (accessory) {
           findOrCreateService(CommunityTypes.NoiseLevelSensor, function (service) {
             service.setCharacteristic(Characteristic.Name, self.name + ' Noise Level')
             service.getCharacteristic(CommunityTypes.NoiseLevel)
-                   .on('get', function (callback) { self._getState.bind(self)('noise', callback) })
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
            })
          }
 
@@ -234,7 +234,7 @@ ServersCheck.prototype._setServices = function (accessory) {
             service.getCharacteristic(Characteristic.AirQuality)
                    .on('get', function (callback) { self._getState.bind(self)('aqi', callback) })
             service.getCharacteristic(Characteristic.PM2_5Density)
-                   .on('get', function (callback) { self._getState.bind(self)('particles.2_5', callback) })
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
           })
         }
 
@@ -243,7 +243,7 @@ ServersCheck.prototype._setServices = function (accessory) {
           findOrCreateService(Service.TemperatureSensor, function (service) {
             service.setCharacteristic(Characteristic.Name, self.name + ' Temperature')
             service.getCharacteristic(Characteristic.CurrentTemperature)
-                   .on('get', function (callback) { self._getState.bind(self)('temperature', callback) })
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
           })
         }
     }[key] || function () { self.platform.log.warn('setServices: no Service for ' + key) }
@@ -394,24 +394,139 @@ ServersCheck.prototype._getState = function (property, callback) {
 }
 
 
-/*
 const UPS = function (platform, agentId, service) {
   const self = this
 
   if (!(self instanceof UPS)) return new UPS(platform, agentId, service)
 
   Agent.call(self, platform, agentId, service)
-  self.manufacturer = 'Schneider Electric'
+//self.manufacturer = 'Schneider Electric'
 
-  console.log(JSON.stringify(service, null, 2))
+  self._refresh(function (err, properties) {
+    let accessory
 
-  process.exit(0)
+    if (err) return self.platform.log.error('refresh', underscore.extend({ agentId: self.agentId }, err))
+
+    self.cache.set('properties', properties)
+    if (self.accessory) return
+
+    accessory = self.platform.discoveries[self.uuid]
+    if (!accessory) return self.platform._addAccessory(self)
+
+    delete self.platform.discoveries[self.uuid]
+    self.attachAccessory(accessory)
+    accessory.updateReachability(true)
+  })
 }
 util.inherits(UPS, Agent)
 
 UPS.prototype._setServices = function (accessory) {
+  const self = this
+
+  const findOrCreateService = function (P, callback) {
+    let newP, service
+
+    service = accessory.getService(P)
+    if (!service) {
+      newP = true
+      service = new P()
+    }
+    callback(service)
+
+    if (newP) accessory.addService(service, self.name)
+  }
+
+  findOrCreateService(Service.AccessoryInformation, function (service) {
+    service.setCharacteristic(Characteristic.Name, self.name)
+           .setCharacteristic(Characteristic.Manufacturer, self.manufacturer)
+           .setCharacteristic(Characteristic.Model, self.model)
+           .setCharacteristic(Characteristic.SerialNumber, self.serialNumber)
+/* TBD:
+         .setCharacteristic(Characteristic.FirmwareRevision, self.firmwareRevision)
+ */
+  })
+
+  const PowerService = function (displayName, subtype) {
+    Service.call(this, displayName, '00000001-0000-1000-8000-135D67EC4377', subtype)
+    this.addCharacteristic(CommunityTypes.Volts)
+    this.addCharacteristic(CommunityTypes.VoltAmperes)
+    this.addCharacteristic(CommunityTypes.Watts)
+    this.addCharacteristic(CommunityTypes.KilowattHours)
+  }
+  util.inherits(PowerService, Service)
+
+  const myPowerService = new PowerService(self.name)
+
+  underscore.keys(self.capabilities).forEach(function (key) {
+    const f =
+    { inputVoltageAC:
+        function () {
+// upsConfigInputVoltage
+            myPowerService.getCharacteristic(CommunityTypes.InputVoltageAC)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+         }
+
+     , batteryVoltageDC:
+        function () {
+// upsBatteryVoltage
+            myPowerService.getCharacteristic(CommunityTypes.BatteryVoltageDC)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+         }
+
+     , loadPercentage:
+        function () {
+// upsEstimatedChargeRemaining
+            myPowerService.getCharacteristic(Characteristic.UPSLoadPercent)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
+    , volts:
+        function () {
+// upsBatteryVoltage
+            myPowerService.getCharacteristic(Characteristic.Volts)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
+    , apparentPower:
+        function () {
+// upsConfigOutputVA
+            myPowerService.getCharacteristic(Characteristic.VoltAmperes)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
+    , watts:
+        function () {
+// upsInputTruePower
+            myPowerService.getCharacteristic(Characteristic.Watts)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
+/* TBD:
+    , outputVoltageAC:
+        function () {
+            myPowerService.getCharacteristic(CommunityTypes.OutputVoltageAC)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+         }
+
+    , kwh:
+        function () {
+            myPowerService.getCharacteristic(CommunityTypes.KilowattHours)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+         }
+ */
+
+    , temperature:
+        function () {
+// upsBatteryTemperature
+            myPowerService.getCharacteristic(Characteristic.CurrentTemperature)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+    }[key] || function () { self.platform.log.warn('setServices: no Service for ' + key) }
+    f()
+  })
 }
 
+/*
 UPS.prototype._refresh = function (callback) {
 }
 
@@ -420,45 +535,18 @@ UPS.prototype._normalize = function (name, value) {
 
 UPS.prototype._getState = function (property, callback) {
 }
-*/
+ */
 
 /*
-getName                upsIdentName
-getManufacturer        upsIdentManufacturer
-getModel               upsIdentModel
-getSerialNumber        battManIdentSerialNumber
-getFirmwareRevision    upsIdentUPSSoftwareVersion
-
-power:
-getInputVoltageAC      upsConfigInputVoltage
-getBatteryVoltageDC    upsBatteryVoltage
-getUPSLoadPercdent     upsEstimatedChargeRemaining
-getVolts               upsBatteryVoltage
-getVoltAmperes         upsConfigOutputVA 
-getWatts               upsInputTruePower
-getKilowattHours       
+getKilowattHours       ???
 getOutputVoltageAC     OUTPUTV
-getVoltAmperes         OUTCURNT
-getCurrentTemperature  upsBatteryTemperature
-
-battery:
-getContactSensorState  (STATFLAG & 0x08) ? CONTACT_DETECTED : CONTACT_NOT_DETECTED
-getStatusActive        LOADPCT > 0 ? ACTIVE : INACTIVE
-getStatusFault         faultP ? GENERAL_FAULT: NO_FAULT
-getEveTimesOpened
-getEveOpenDuration
-getEveCloseDuration
-getEveLastActivation
-getEveResetTotal
-getBatteryLevel        BCHARGE
-getChargingState       (STATFLAG & 0x80) ? NOT_CHARGEABLE ? ((flags & 0x10) || (BCHARGE === 100) ? NOT_CHARGING : CHARGING
-getStatusLowBattery    (STATFLAG & 0x40) ? BATTERY_LEVEL_LOW : BATTERY_LEVEL_NORMAL
  */
 
 
 const sysObjectIDs =
 { '1.3.6.1.4.1.17095'      : ServersCheck
 /*
- , '1.3.6.1.4.1.318.1.3.27' : UPS
+ , '1.3.6.1.4.1.318.1.3.27' : UPS    // APC 
+ , '1.3.6.1.4.1.850.1.1.1'  : UPS    // Tripp-Lite poweralert-061036685195
  */
 }
