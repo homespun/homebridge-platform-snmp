@@ -1,5 +1,4 @@
 /* jshint asi: true, esversion: 6, node: true, laxbreak: true, laxcomma: true, undef: true, unused: true */
-
 const NodeCache   = require('node-cache')
     , arp         = require('arp-a')
 //  , debug       = require('debug')('homebridge-platform-snmp')
@@ -119,8 +118,8 @@ const Agent = function (platform, agentId, service) {
   this.rinfo = underscore.pick(service, [ 'host', 'port' ])
   this.varbinds = varbinds
 
-  this.model = varbinds[0].value
-  this.name = varbinds[2].value
+  this.model = varbinds[0].value    // sysDescr.0
+  this.name = varbinds[2].value     // sysName.0
 
   this.cache = new NodeCache({ stdTTL: this.platform.config.ttl || 10 })
 
@@ -154,6 +153,39 @@ Agent.prototype.onlineP = function (callback) {
     self.platform.log('agent ' + self.agentId + ' sysUpTime: ' + varbinds[0].value)
     self.agents[self.agentId].timestamp = underscore.now()
     callback(null, true)
+  })
+}
+
+Agent.prototype._getState = function (property, callback) {
+  const self = this
+
+  self.cache.get('properties', function (err, properties) {
+    const f = function (properties, cacheP) {
+      if (!properties) {
+        self.platform.log.error('getState: no properties', underscore.extend({ agentId: self.agentId, cacheP: cacheP }, err))
+        return
+      }
+
+      if (property === 'aqi') {
+        const fpc = properties['particles.2_5']
+// TBD: set range via options
+        return (fpc < 35 ? Characteristic.AirQuality.EXCELLENT : fpc < 100 ? Characteristic.AirQuality.FAIR
+                         : Characteristic.AirQuality.POOR)
+      }
+      return properties[property]
+    }
+
+    if (err) return callback(err)
+
+    if (properties) return callback(null, f(properties, true))
+
+    self._refresh(function (err, properties) {
+      if (err) return callback(err)
+
+      if (properties) self.cache.set('properties', properties)
+
+      callback(null, f(properties, false))
+    })
   })
 }
 
@@ -218,16 +250,16 @@ ServersCheck.prototype._setServices = function (accessory) {
            })
          }
 
-     , noise:
+    , noise:
         function () {
           findOrCreateService(CommunityTypes.NoiseLevelSensor, function (service) {
             service.setCharacteristic(Characteristic.Name, self.name + ' Noise Level')
             service.getCharacteristic(CommunityTypes.NoiseLevel)
                    .on('get', function (callback) { self._getState.bind(self)(key, callback) })
            })
-         }
+        }
 
-     , 'particles.2_5':
+    , 'particles.2_5':
         function () {
           findOrCreateService(Service.AirQualitySensor, function (service) {
             service.setCharacteristic(Characteristic.Name, self.name + ' Air Quality')
@@ -237,7 +269,6 @@ ServersCheck.prototype._setServices = function (accessory) {
                    .on('get', function (callback) { self._getState.bind(self)(key, callback) })
           })
         }
-
     , temperature:
         function () {
           findOrCreateService(Service.TemperatureSensor, function (service) {
@@ -307,7 +338,7 @@ ServersCheck.prototype._refresh = function (callback) {
       names = {}
       varbinds.forEach(function (varbind) {
         const leaf    = varbind.oid[varbind.oid.length - 2]
-          , subtree = varbind.oid[varbind.oid.length - 3]
+            , subtree = varbind.oid[varbind.oid.length - 3]
 
         if (leaf === 1) names[subtree] = varbind.value
         else if ((leaf === 2) && (!!names[subtree])) {
@@ -316,7 +347,7 @@ ServersCheck.prototype._refresh = function (callback) {
       })
 
       self.capabilities = {}
-      underscore.keys(properties).forEach(function (key) { self.capabilities[key] = sensorTypes[key] })
+      underscore.keys(properties).forEach(function (key) { self.capabilities[key] = { field: key } })
       callback(null, properties)
     })
   })
@@ -360,47 +391,20 @@ ServersCheck.prototype._normalize = function (name, value) {
     return underscore.object([ key ], [ f() ])
 }
 
-ServersCheck.prototype._getState = function (property, callback) {
-  const self = this
-
-  self.cache.get('properties', function (err, properties) {
-    const f = function (properties, cacheP) {
-      if (!properties) {
-        self.platform.log.error('getState: no properties', underscore.extend({ agentId: self.agentId, cacheP: cacheP }, err))
-        return
-      }
-
-      if (property === 'aqi') {
-        const fpc = properties['particles.2_5']
-// TBD: set range via options
-        return (fpc < 35 ? Characteristic.AirQuality.EXCELLENT : fpc < 100 ? Characteristic.AirQuality.FAIR
-                         : Characteristic.AirQuality.POOR)
-      }
-      return properties[property]
-    }
-
-    if (err) return callback(err)
-
-    if (properties) return callback(null, f(properties, true))
-
-    self._refresh(function (err, properties) {
-      if (err) return callback(err)
-
-      if (properties) self.cache.set('properties', properties)
-
-      callback(null, f(properties, false))
-    })
-  })
-}
-
-
 const UPS = function (platform, agentId, service) {
   const self = this
+
+  let upsObject
 
   if (!(self instanceof UPS)) return new UPS(platform, agentId, service)
 
   Agent.call(self, platform, agentId, service)
-//self.manufacturer = 'Schneider Electric'
+
+  upsObject = upsObjectIDs[service.packet.pdu.varbinds[1].value]
+  if (upsObject) {
+    self.manufacturer = upsObject.manufacturer
+// also set model & serialNumber
+  }
 
   self._refresh(function (err, properties) {
     let accessory
@@ -452,6 +456,10 @@ UPS.prototype._setServices = function (accessory) {
     this.addCharacteristic(CommunityTypes.VoltAmperes)
     this.addCharacteristic(CommunityTypes.Watts)
     this.addCharacteristic(CommunityTypes.KilowattHours)
+    this.addCharacteristic(CommunityTypes.Amperes)
+    this.addOptionalCharacteristic(CommunityTypes.BatteryVoltageDC)
+    this.addOptionalCharacteristic(CommunityTypes.UPSLoadPercent)
+    this.addOptionalCharacteristic(CommunityTypes.OutputVoltageAC)
   }
   util.inherits(PowerService, Service)
 
@@ -459,94 +467,227 @@ UPS.prototype._setServices = function (accessory) {
 
   underscore.keys(self.capabilities).forEach(function (key) {
     const f =
-    { inputVoltageAC:
+    { volts:
         function () {
-// upsConfigInputVoltage
-            myPowerService.getCharacteristic(CommunityTypes.InputVoltageAC)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-         }
-
-     , batteryVoltageDC:
-        function () {
-// upsBatteryVoltage
-            myPowerService.getCharacteristic(CommunityTypes.BatteryVoltageDC)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-         }
-
-     , loadPercentage:
-        function () {
-// upsEstimatedChargeRemaining
-            myPowerService.getCharacteristic(Characteristic.UPSLoadPercent)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-        }
-
-    , volts:
-        function () {
-// upsBatteryVoltage
-            myPowerService.getCharacteristic(Characteristic.Volts)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-        }
-
-    , apparentPower:
-        function () {
-// upsConfigOutputVA
-            myPowerService.getCharacteristic(Characteristic.VoltAmperes)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+          myPowerService.getCharacteristic(CommunityTypes.Volts)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
         }
 
     , watts:
         function () {
-// upsInputTruePower
-            myPowerService.getCharacteristic(Characteristic.Watts)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+          myPowerService.getCharacteristic(CommunityTypes.Watts)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
         }
 
-/* TBD:
-    , outputVoltageAC:
+    , voltAmperes:
         function () {
-            myPowerService.getCharacteristic(CommunityTypes.OutputVoltageAC)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+          myPowerService.getCharacteristic(CommunityTypes.VoltAmperes)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
          }
 
-    , kwh:
+    , kilowattHours:
         function () {
-            myPowerService.getCharacteristic(CommunityTypes.KilowattHours)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+          myPowerService.getCharacteristic(CommunityTypes.KilowattHours)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
          }
- */
 
-    , temperature:
+    , amperes:
         function () {
-// upsBatteryTemperature
-            myPowerService.getCharacteristic(Characteristic.CurrentTemperature)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+          myPowerService.getCharacteristic(CommunityTypes.Amperes)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+         }
+
+    , batteryVoltageDC:
+        function () {
+          myPowerService.getCharacteristic(CommunityTypes.BatteryVoltageDC)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+         }
+
+    , upsLoadPercent:
+        function () {
+          myPowerService.getCharacteristic(CommunityTypes.UPSLoadPercent)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
         }
     }[key] || function () { self.platform.log.warn('setServices: no Service for ' + key) }
     f()
   })
 }
 
-/*
 UPS.prototype._refresh = function (callback) {
+  const self = this
+
+  const oidI = discovery.Observe.prototype.oidI
+  const oidS = discovery.Observe.prototype.oidS
+  let oid
+
+  if (!self.uuid) {
+    arp.table(function (err, entry) {
+      if (err) return self.platform.logger.error('ARP table', err)
+
+      if (!entry) {
+        if (!self.uuid) self.uuid = UUIDGen.generate(self.name)
+        return
+      }
+
+      if ((self.uuid) || (entry.ip !== self.rinfo.host)) return
+
+      self.uuid = UUIDGen.generate(entry.mac + ':' + self.rinfo.port)
+      if (!self.serialNumber) self.serialNumber = entry.mac
+    })
+  }
+
+  oid = oidI(upsMibMap.upsObjects.oid)
+  self.session.getSubtree({ oid: oid }, function (err, varbinds) {
+    const properties = {}
+
+    if (err) {
+      self.platform.log.error('getSubtree', underscore.extend({ agentId: self.agentId, oid: oid }, err))
+      return callback(err)
+    }
+
+    self.timestamp = underscore.now()
+
+    varbinds.forEach(function (varbind) {
+      const name = oidS(varbind.oid)
+
+      underscore.keys(upsMibMap).forEach(function (key) {
+        const entry = upsMibMap[key]
+
+        if (name !== entry.prefix) return
+
+        entry.normalize(properties, entry.capability, varbind.value)
+      })
+    })
+console.log('!!! ' + JSON.stringify(underscore.pick(self, [ 'uuid', 'name', 'manufacturer', 'model', 'serialNumber' ])))
+console.log(JSON.stringify(properties, null, 2))
+
+    self.capabilities = {}
+    underscore.keys(properties).forEach(function (key) { self.capabilities[key] = sensorTypes[key] })
+    callback(null, properties)
+  })
 }
 
-UPS.prototype._normalize = function (name, value) {
+const upsNormalizers =
+{ hundredNonNegativeInteger32 :
+    function (properties, key, value) {
+      value = parseInt(value, 10)
+
+      if ((isNaN(value)) || (value < 0)) return
+
+      value /= 100.0
+      properties[key] = value.toFixed(2)
+    }
+, integer32                   :
+    function (properties, key, value) {
+      value = parseInt(value, 10)
+
+      if (isNaN(value)) return
+
+      properties[key] = value
+    }
+, nonNegativeInteger          :
+    function (properties, key, value) {
+      value = parseInt(value, 10)
+
+      if ((isNaN(value)) || (value < 0)) return
+
+      properties[key] = value
+    }
+, percentage                  :
+    function (properties, key, value) {
+      value = parseInt(value, 10)
+
+      if ((isNaN(value)) || (value < 0) || (value > 100)) return
+
+      properties[key] = value
+    }
+, tenNonNegativeInteger32     :
+    function (properties, key, value) {
+      value = parseInt(value, 10)
+
+      if ((isNaN(value)) || (value < 0)) return
+
+      value /= 10.0
+      properties[key] = value.toFixed(1)
+    }
 }
 
-UPS.prototype._getState = function (property, callback) {
-}
- */
+const upsMibMap =
+{ upsObjects                  :
+  { oid                       : '1.3.6.1.2.1.33.1' }
+
+, upsOutputVoltage            :
+  { prefix                    : '1.3.6.1.2.1.33.1.4.4.1.2.1'
+  , column                    : true
+  , capability                : 'volts'
+  , normalize                 : upsNormalizers.nonNegativeInteger
+  }
+
+, upsOutputCurrent            :
+  { prefix                    : '1.3.6.1.2.1.33.1.4.4.1.3.1'
+  , column                    : true
+  , capability                : 'amperes'
+  , normalize                 : 
+    function (properties, key, value) {
+      upsNormalizers.tenNonNegativeInteger32(properties, key, value)
+
+      value = properties.volts * properties.amperes
+      properties.voltAmperes = value.toFixed(1)
+    }
+  }
+
+, upsOutputPower              :
+  { prefix                    : '1.3.6.1.2.1.33.1.4.4.1.4.1'
+  , column                    : true
+  , capability                : 'watts'
+  , normalize                 : upsNormalizers.nonNegativeInteger
+  }
 
 /*
-getKilowattHours       ???
-getOutputVoltageAC     OUTPUTV
+  ''                          :
+  { prefix                    : ''
+  , capability                : 'kilowattHours'
+  , normalize                 :
+    function (properties, key, value) {
+...
+    }
+  }
  */
 
+, upsBatteryVoltage           :
+  { prefix                    : '1.3.6.1.2.1.33.1.2.5.0'
+  , capability                : 'batteryVoltageDC'
+  , normalize                 : upsNormalizers.tenNonNegativeInteger32
+  }
+
+, upsEstimatedChargeRemaining :
+  { prefix                    : '1.3.6.1.2.1.33.1.2.4.0'
+  , capability                : 'upsLoadPercent'
+  , normalize                 : upsNormalizers.percentage
+  }
+
+, upsHighPrecOutputEnergyUsage : 
+  { prefix                    : '1.3.6.1.4.1.318.1.1.1.4.3.6.0'
+  , capability                : 'watts'
+  , normalize                 : upsNormalizers.hundredNonNegativeInteger32
+  }
+}
 
 const sysObjectIDs =
 { '1.3.6.1.4.1.17095'      : ServersCheck
 /*
- , '1.3.6.1.4.1.318.1.3.27' : UPS    // APC 
- , '1.3.6.1.4.1.850.1.1.1'  : UPS    // Tripp-Lite poweralert-061036685195
+, '1.3.6.1.4.1.318.1.3.27' : UPS
+, '1.3.6.1.4.1.850.1.1.1'  : UPS
  */
+}
+
+const upsObjectIDs =
+{ '1.3.6.1.4.1.318.1.3.27' :
+  { manufacturer           : 'Schneider Electric'
+  , prefix                 : '1.3.6.1.4.1.318.1.1.1.4.3.6'
+  }
+
+, '1.3.6.1.4.1.850.1.1.1'  :
+  { manufacturer           : 'Tripp-Lite'
+  }
 }
