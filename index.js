@@ -1,7 +1,7 @@
 /* jshint asi: true, esversion: 6, node: true, laxbreak: true, laxcomma: true, undef: true, unused: true */
 const NodeCache   = require('node-cache')
     , arp         = require('arp-a')
-//  , debug       = require('debug')('homebridge-platform-snmp')
+    , debug       = require('debug')('homebridge-platform-snmp')
     , discovery   = require('homespun-discovery').observers.snmp
     , sensorTypes = require('homespun-discovery').utilities.sensortypes
     , snmpn       = require('snmp-native')
@@ -23,6 +23,8 @@ module.exports = function (homebridge) {
   UUIDGen        = homebridge.hap.uuid
 
   homebridge.registerPlatform('homebridge-platform-snmp', 'SNMP', SNMP, true)
+
+  util.inherits(PowerService, Service)
 }
 
 
@@ -88,7 +90,8 @@ SNMP.prototype._addAccessory = function (agent) {
 
   if (!self.discoveries[accessory.UUID]) {
     self.api.registerPlatformAccessories('homebridge-platform-snmp', 'SNMP', [ accessory ])
-    self.log('addAccessory', underscore.pick(agent, [ 'uuid', 'name', 'manufacturer', 'model', 'serialNumber' ]))
+    self.log('addAccessory',
+             underscore.pick(self, [ 'uuid', 'name', 'manufacturer', 'model', 'serialNumber', 'firmwareRevision' ]))
   }
 }
 
@@ -130,7 +133,8 @@ const Agent = function (platform, agentId, service) {
 Agent.prototype.attachAccessory = function (accessory) {
   this.accessory = accessory
   this._setServices(accessory)
-  this.platform.log('attachAccessory', underscore.pick(this, [ 'uuid', 'name', 'manufacturer', 'model', 'serialNumber' ]))
+  this.platform.log('attachAccessory',
+                    underscore.pick(this, [ 'uuid', 'name', 'manufacturer', 'model', 'serialNumber', 'firmwareRevision' ]))
 }
 
 // not used
@@ -172,6 +176,8 @@ Agent.prototype._getState = function (property, callback) {
         return (fpc < 35 ? Characteristic.AirQuality.EXCELLENT : fpc < 100 ? Characteristic.AirQuality.FAIR
                          : Characteristic.AirQuality.POOR)
       }
+
+      debug('getState ' + property + ': ' + properties[property])
       return properties[property]
     }
 
@@ -347,7 +353,7 @@ ServersCheck.prototype._refresh = function (callback) {
       })
 
       self.capabilities = {}
-      underscore.keys(properties).forEach(function (key) { self.capabilities[key] = { field: key } })
+      underscore.keys(properties).forEach(function (key) { self.capabilities[key] = sensorTypes[key] })
       callback(null, properties)
     })
   })
@@ -394,23 +400,18 @@ ServersCheck.prototype._normalize = function (name, value) {
 const UPS = function (platform, agentId, service) {
   const self = this
 
-  let upsObject
-
   if (!(self instanceof UPS)) return new UPS(platform, agentId, service)
 
   Agent.call(self, platform, agentId, service)
 
-  upsObject = upsObjectIDs[service.packet.pdu.varbinds[1].value]
-  if (upsObject) {
-    self.manufacturer = upsObject.manufacturer
-// also set model & serialNumber
-  }
+  self.upsObject = upsObjectIDs[service.packet.pdu.varbinds[1].value] || {}
 
   self._refresh(function (err, properties) {
     let accessory
 
     if (err) return self.platform.log.error('refresh', underscore.extend({ agentId: self.agentId }, err))
 
+    debug('set properties cache: ' + JSON.stringify(properties, null, 2))
     self.cache.set('properties', properties)
     if (self.accessory) return
 
@@ -426,6 +427,8 @@ util.inherits(UPS, Agent)
 
 UPS.prototype._setServices = function (accessory) {
   const self = this
+
+  let batteryService, powerService
 
   const findOrCreateService = function (P, callback) {
     let newP, service
@@ -445,69 +448,78 @@ UPS.prototype._setServices = function (accessory) {
            .setCharacteristic(Characteristic.Manufacturer, self.manufacturer)
            .setCharacteristic(Characteristic.Model, self.model)
            .setCharacteristic(Characteristic.SerialNumber, self.serialNumber)
-/* TBD:
-         .setCharacteristic(Characteristic.FirmwareRevision, self.firmwareRevision)
- */
+           .setCharacteristic(Characteristic.FirmwareRevision, self.firmwareRevision)
   })
 
-  const PowerService = function (displayName, subtype) {
-    Service.call(this, displayName, '00000001-0000-1000-8000-135D67EC4377', subtype)
-    this.addCharacteristic(CommunityTypes.Volts)
-    this.addCharacteristic(CommunityTypes.VoltAmperes)
-    this.addCharacteristic(CommunityTypes.Watts)
-    this.addCharacteristic(CommunityTypes.KilowattHours)
-    this.addCharacteristic(CommunityTypes.Amperes)
-    this.addOptionalCharacteristic(CommunityTypes.BatteryVoltageDC)
-    this.addOptionalCharacteristic(CommunityTypes.UPSLoadPercent)
-    this.addOptionalCharacteristic(CommunityTypes.OutputVoltageAC)
-  }
-  util.inherits(PowerService, Service)
+  findOrCreateService(Service.BatteryService, function (service) {
+    batteryService = service
+  })
 
-  const myPowerService = new PowerService(self.name)
+  findOrCreateService(PowerService, function (service) {
+    powerService = service
+  })
 
   underscore.keys(self.capabilities).forEach(function (key) {
     const f =
     { volts:
         function () {
-          myPowerService.getCharacteristic(CommunityTypes.Volts)
-                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-        }
-
-    , watts:
-        function () {
-          myPowerService.getCharacteristic(CommunityTypes.Watts)
+          powerService.getCharacteristic(CommunityTypes.Volts)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
         }
 
     , voltAmperes:
         function () {
-          myPowerService.getCharacteristic(CommunityTypes.VoltAmperes)
+          powerService.getCharacteristic(CommunityTypes.VoltAmperes)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
          }
 
+    , watts:
+        function () {
+          powerService.getCharacteristic(CommunityTypes.Watts)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
     , kilowattHours:
         function () {
-          myPowerService.getCharacteristic(CommunityTypes.KilowattHours)
+          powerService.getCharacteristic(CommunityTypes.KilowattHours)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
          }
 
     , amperes:
         function () {
-          myPowerService.getCharacteristic(CommunityTypes.Amperes)
+          powerService.getCharacteristic(CommunityTypes.Amperes)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
          }
 
     , batteryVoltageDC:
         function () {
-          myPowerService.getCharacteristic(CommunityTypes.BatteryVoltageDC)
+          powerService.getCharacteristic(CommunityTypes.BatteryVoltageDC)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
          }
 
-    , upsLoadPercent:
+    , currentTemperature:
         function () {
-          myPowerService.getCharacteristic(CommunityTypes.UPSLoadPercent)
-                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           powerService.getCharacteristic(Characteristic.CurrentTemperature)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
         }
+
+    , batteryLevel:
+      function () {
+        batteryService.getCharacteristic(Characteristic.BatteryLevel)
+                      .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+      }
+
+    , chargingState:
+      function () {
+        batteryService.getCharacteristic(Characteristic.ChargingState)
+                      .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+      }
+
+    , statusLowBattery:
+      function () {
+        batteryService.getCharacteristic(Characteristic.StatusLowBattery)
+                      .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+      }
     }[key] || function () { self.platform.log.warn('setServices: no Service for ' + key) }
     f()
   })
@@ -516,17 +528,34 @@ UPS.prototype._setServices = function (accessory) {
 UPS.prototype._refresh = function (callback) {
   const self = this
 
-  const oidI = discovery.Observe.prototype.oidI
-  const oidS = discovery.Observe.prototype.oidS
-  let oid
+  const oidI         = discovery.Observe.prototype.oidI
+      , oidS         = discovery.Observe.prototype.oidS
+      , capabilities = {}
+      , properties   = {}
 
-  if (!self.uuid) {
+  const done = function () {
+    self.capabilities = capabilities
+    if (self.uuid) return callback(null, properties)
+
+    if (!self.upsObject.initObjects) return finalize()
+    initialize(function(err) {
+      if (err) return callback(err)
+
+      finalize()
+    })
+  }
+
+  const initialize = function (callback) {
+    walk (oidI(self.upsObject.initObjects), callback)
+  }
+
+  const finalize = function () {
     arp.table(function (err, entry) {
       if (err) return self.platform.logger.error('ARP table', err)
 
       if (!entry) {
         if (!self.uuid) self.uuid = UUIDGen.generate(self.name)
-        return
+        return callback(null, properties)
       }
 
       if ((self.uuid) || (entry.ip !== self.rinfo.host)) return
@@ -536,43 +565,71 @@ UPS.prototype._refresh = function (callback) {
     })
   }
 
-  oid = oidI(upsMibMap.upsObjects.oid)
-  self.session.getSubtree({ oid: oid }, function (err, varbinds) {
-    const properties = {}
+  const walk = function (oid, callback) {
+    self.session.getSubtree({ oid: oid }, function (err, varbinds) {
+      if (err) {
+        self.platform.log.error('getSubtree', underscore.extend({ agentId: self.agentId, oid: oid }, err))
+        return callback(err)
+      }
 
-    if (err) {
-      self.platform.log.error('getSubtree', underscore.extend({ agentId: self.agentId, oid: oid }, err))
-      return callback(err)
-    }
+      self.timestamp = underscore.now()
 
-    self.timestamp = underscore.now()
+      varbinds.forEach(function (varbind) {
+        const name = oidS(varbind.oid)
 
-    varbinds.forEach(function (varbind) {
-      const name = oidS(varbind.oid)
+        underscore.keys(upsMibMap).forEach(function (key) {
+          const entry    = upsMibMap[key]
+              , field    = entry.capability
+              , property = entry.property
 
-      underscore.keys(upsMibMap).forEach(function (key) {
-        const entry = upsMibMap[key]
+          if (name !== entry.name) return
 
-        if (name !== entry.prefix) return
-
-        entry.normalize(properties, entry.capability, varbind.value)
+          if (property) self[property] = varbind.value.trim()
+          else {
+            entry.normalize(properties, entry.capability, varbind.value)
+            capabilities[field] = { field: field }
+          }
+        })
       })
-    })
-console.log('!!! ' + JSON.stringify(underscore.pick(self, [ 'uuid', 'name', 'manufacturer', 'model', 'serialNumber' ])))
-console.log(JSON.stringify(properties, null, 2))
 
-    self.capabilities = {}
-    underscore.keys(properties).forEach(function (key) { self.capabilities[key] = sensorTypes[key] })
-    callback(null, properties)
+      callback()
+    })
+  }
+
+  walk(oidI(upsMibMap.upsObjects.oid), function (err) {
+    if (err) return callback(err)
+
+    if (!self.upsObject.upsObjects) return done()
+
+    walk(oidI(self.upsObject.upsObjects), function (err) {
+      if (err) return callback(err)
+
+      done()
+    })
   })
 }
+
+const PowerService = function (displayName, subtype) {
+  Service.call(this, displayName, '00000001-0000-1000-8000-135D67EC4377', subtype)
+
+  this.addCharacteristic(CommunityTypes.Volts)
+  this.addCharacteristic(CommunityTypes.VoltAmperes)
+  this.addCharacteristic(CommunityTypes.Watts)
+  this.addCharacteristic(CommunityTypes.KilowattHours)
+  this.addCharacteristic(CommunityTypes.Amperes)
+
+  this.addOptionalCharacteristic(CommunityTypes.BatteryVoltageDC)
+  this.addOptionalCharacteristic(Characteristic.CurrentTemperature)
+}
+// https://github.com/homespun/homebridge-accessory-neurio/blob/master/index.js#L143
+PowerService.UUID = '00000001-0000-1000-8000-135D67EC4377'
 
 const upsNormalizers =
 { hundredNonNegativeInteger32 :
     function (properties, key, value) {
       value = parseInt(value, 10)
 
-      if ((isNaN(value)) || (value < 0)) return
+      if (isNaN(value) || (value < 0)) return
 
       value /= 100.0
       properties[key] = value.toFixed(2)
@@ -589,7 +646,7 @@ const upsNormalizers =
     function (properties, key, value) {
       value = parseInt(value, 10)
 
-      if ((isNaN(value)) || (value < 0)) return
+      if (isNaN(value) || (value < 0)) return
 
       properties[key] = value
     }
@@ -597,7 +654,7 @@ const upsNormalizers =
     function (properties, key, value) {
       value = parseInt(value, 10)
 
-      if ((isNaN(value)) || (value < 0) || (value > 100)) return
+      if (isNaN(value) || (value < 0) || (value > 100)) return
 
       properties[key] = value
     }
@@ -605,7 +662,7 @@ const upsNormalizers =
     function (properties, key, value) {
       value = parseInt(value, 10)
 
-      if ((isNaN(value)) || (value < 0)) return
+      if (isNaN(value) || (value < 0)) return
 
       value /= 10.0
       properties[key] = value.toFixed(1)
@@ -613,21 +670,86 @@ const upsNormalizers =
 }
 
 const upsMibMap =
-{ upsObjects                  :
-  { oid                       : '1.3.6.1.2.1.33.1' }
+{ upsObjects                   :
+  { oid                        : '1.3.6.1.2.1.33.1' }
 
-, upsOutputVoltage            :
-  { prefix                    : '1.3.6.1.2.1.33.1.4.4.1.2.1'
-  , column                    : true
-  , capability                : 'volts'
-  , normalize                 : upsNormalizers.nonNegativeInteger
+
+, upsIdentManufacturer         :
+  { name                       : '1.3.6.1.2.1.33.1.1.1.0'
+  , property                   : 'manufacturer'
   }
 
-, upsOutputCurrent            :
-  { prefix                    : '1.3.6.1.2.1.33.1.4.4.1.3.1'
-  , column                    : true
-  , capability                : 'amperes'
-  , normalize                 : 
+, upsIdentModel                :
+  { name                       : '1.3.6.1.2.1.33.1.1.2.0'
+  , property                   : 'model'
+  }
+
+, upsIdentUPSSoftwareVersion   :
+  { name                       : '1.3.6.1.2.1.33.1.1.3.0'
+  , property                   : 'firmwareRevision'
+  }
+
+, upsIdentName                 :
+  { name                       : '1.3.6.1.2.1.33.1.1.5.0'
+  , property                   : 'name'
+  }
+
+, upsBatteryStatus             :
+  { name                       : '1.3.6.1.2.1.33.1.2.1.0'
+  , capability                 : 'statusLowBattery'
+  , normalize                  : 
+    function (properties, key, value) {
+/* TBD: how to calculate chargingState
+
+     (upsEstimatedChargeRemaining === 100) ? NOT_CHARGING
+   : (input power === 0)                   ? NOT_CHARGING
+   : CHARGING
+
+*/
+      value = parseInt(value, 10)
+
+/*
+    unknown(1),
+    batteryNormal(2),
+    batteryLow(3),
+    batteryDepleted(4)
+ */
+      if (isNaN(value) || (value < 2) || (value > 4)) return
+
+      properties[key] = Characteristic.StatusLowBattery[(value !== 2) ? 'BATTERY_LEVEL_LOW' : 'BATTERY_LEVEL_NORMAL']
+    }
+  }
+
+, upsEstimatedChargeRemaining  :
+  { name                       : '1.3.6.1.2.1.33.1.2.4.0'
+  , capability                 : 'batteryLevel'
+  , normalize                  : upsNormalizers.percentage
+  }
+
+, upsBatteryVoltage            :
+  { name                       : '1.3.6.1.2.1.33.1.2.5.0'
+  , capability                 : 'batteryVoltageDC'
+  , normalize                  : upsNormalizers.tenNonNegativeInteger32
+  }
+
+, upsBatteryTemperature        :
+  { name                       : '1.3.6.1.2.1.33.1.2.7.0'
+  , capability                 : 'currentTemperature'
+  , normalize                  : upsNormalizers.integer32
+  }
+
+, upsOutputVoltage             :
+  { name                       : '1.3.6.1.2.1.33.1.4.4.1.2.1'
+  , column                     : true
+  , capability                 : 'volts'
+  , normalize                  : upsNormalizers.nonNegativeInteger
+  }
+
+, upsOutputCurrent             :
+  { name                       : '1.3.6.1.2.1.33.1.4.4.1.3.1'
+  , column                     : true
+  , capability                 : 'amperes'
+  , normalize                  :
     function (properties, key, value) {
       upsNormalizers.tenNonNegativeInteger32(properties, key, value)
 
@@ -636,42 +758,33 @@ const upsMibMap =
     }
   }
 
-, upsOutputPower              :
-  { prefix                    : '1.3.6.1.2.1.33.1.4.4.1.4.1'
-  , column                    : true
-  , capability                : 'watts'
-  , normalize                 : upsNormalizers.nonNegativeInteger
+, upsOutputPower               :
+  { name                       : '1.3.6.1.2.1.33.1.4.4.1.4.1'
+  , column                     : true
+  , capability                 : 'watts'
+  , normalize                  : upsNormalizers.nonNegativeInteger
   }
 
 /*
-  ''                          :
-  { prefix                    : ''
-  , capability                : 'kilowattHours'
-  , normalize                 :
-    function (properties, key, value) {
-...
-    }
+  ''                           :
+  { name                       : ''
+  , capability                 : 'kilowattHours'
+  , normalize                  : ...
   }
  */
 
-, upsBatteryVoltage           :
-  { prefix                    : '1.3.6.1.2.1.33.1.2.5.0'
-  , capability                : 'batteryVoltageDC'
-  , normalize                 : upsNormalizers.tenNonNegativeInteger32
+, pmmIdentSerialNumber         :
+  { name                       : '1.3.6.1.4.1.318.1.1.1.1.2.3.0'
+  , property                   : 'serialNumber'
   }
 
-, upsEstimatedChargeRemaining :
-  { prefix                    : '1.3.6.1.2.1.33.1.2.4.0'
-  , capability                : 'upsLoadPercent'
-  , normalize                 : upsNormalizers.percentage
-  }
-
-, upsHighPrecOutputEnergyUsage : 
-  { prefix                    : '1.3.6.1.4.1.318.1.1.1.4.3.6.0'
-  , capability                : 'watts'
-  , normalize                 : upsNormalizers.hundredNonNegativeInteger32
+, upsHighPrecOutputEnergyUsage :
+  { name                       : '1.3.6.1.4.1.318.1.1.1.4.3.6.0'
+  , capability                 : 'watts'
+  , normalize                  : upsNormalizers.hundredNonNegativeInteger32
   }
 }
+
 
 const sysObjectIDs =
 { '1.3.6.1.4.1.17095'      : ServersCheck
@@ -682,12 +795,12 @@ const sysObjectIDs =
 }
 
 const upsObjectIDs =
-{ '1.3.6.1.4.1.318.1.3.27' :
-  { manufacturer           : 'Schneider Electric'
-  , prefix                 : '1.3.6.1.4.1.318.1.1.1.4.3.6'
+{ '1.3.6.1.4.1.318.1.3.27' : // Schneider Electric
+  { initObjects            : '1.3.6.1.4.1.318.1.1.1.1.2.3'
+  , upsObjects             : '1.3.6.1.4.1.318.1.1.1.4.3.6'
   }
 
-, '1.3.6.1.4.1.850.1.1.1'  :
-  { manufacturer           : 'Tripp-Lite'
+, '1.3.6.1.4.1.850.1.1.1'  : // Tripp-Lite
+  {
   }
 }
