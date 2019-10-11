@@ -165,20 +165,29 @@ Agent.prototype._getState = function (property, callback) {
 
   self.cache.get('properties', function (err, properties) {
     const f = function (properties, cacheP) {
+      let value
+      
       if (!properties) {
         self.platform.log.error('getState: no properties', underscore.extend({ agentId: self.agentId, cacheP: cacheP }, err))
+        if (property === 'statusFault') return Characteristic.StatusFault.GENERAL_FAULT
+
         return
       }
 
       if (property === 'aqi') {
         const fpc = properties['particles.2_5']
 // TBD: set range via options
-        return (fpc < 35 ? Characteristic.AirQuality.EXCELLENT : fpc < 100 ? Characteristic.AirQuality.FAIR
-                         : Characteristic.AirQuality.POOR)
+        value = fpc <  35 ? Characteristic.AirQuality.EXCELLENT
+              : fpc < 100 ? Characteristic.AirQuality.FAIR
+              :             Characteristic.AirQuality.POOR
+      } else if (property === 'statusFault') {
+        value = Characteristic.StatusFault.NO_FAULT
+      } else {
+        value =  properties[property]
       }
 
-      debug('getState ' + property + ': ' + properties[property])
-      return properties[property]
+      debug('getState ' + property + ': ' + value)
+      return value
     }
 
     if (err) return callback(err)
@@ -186,7 +195,11 @@ Agent.prototype._getState = function (property, callback) {
     if (properties) return callback(null, f(properties, true))
 
     self._refresh(function (err, properties) {
-      if (err) return callback(err)
+      if (err) {
+        if (property === 'statusFault') return Characteristic.StatusFault.GENERAL_FAULT
+
+        return callback(err)
+      }
 
       if (properties) self.cache.set('properties', properties)
 
@@ -428,7 +441,7 @@ util.inherits(UPS, Agent)
 UPS.prototype._setServices = function (accessory) {
   const self = this
 
-  let batteryService, powerService
+  let batteryService, contactService, powerService
 
   const findOrCreateService = function (P, callback) {
     let newP, service
@@ -451,75 +464,127 @@ UPS.prototype._setServices = function (accessory) {
            .setCharacteristic(Characteristic.FirmwareRevision, self.firmwareRevision)
   })
 
-  findOrCreateService(Service.BatteryService, function (service) {
-    batteryService = service
-  })
+  if (self.upsObject.type === 'battery') {
+    findOrCreateService(Service.BatteryService, function (service) {
+      batteryService = service
 
-  findOrCreateService(PowerService, function (service) {
-    powerService = service
-  })
+      service.addOptionalCharacteristic(CommunityTypes.BatteryVoltageDC)
+      service.addOptionalCharacteristic(Characteristic.CurrentTemperature)
+    })
+
+    findOrCreateService(Service.ContactSensor, function (service) {
+      contactService = service
+
+      service.getCharacteristic(Characteristic.StatusFault)
+             .on('get', function (callback) { self._getState.bind(self)('statusFault', callback) })
+    })
+  } else {
+    findOrCreateService(PowerService, function (service) {
+      powerService = service
+    })
+  }
 
   underscore.keys(self.capabilities).forEach(function (key) {
     const f =
-    { volts:
+    { batteryLevel:
         function () {
+          if (!batteryService) return
+
+          batteryService.getCharacteristic(Characteristic.BatteryLevel)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
+    , chargingState:
+        function () {
+          if (!batteryService) return
+
+          batteryService.getCharacteristic(Characteristic.ChargingState)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
+    , statusLowBattery:
+        function () {
+          if (batteryService) {
+            batteryService.getCharacteristic(Characteristic.StatusLowBattery)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+          }
+          if (contactService) {
+            contactService.getCharacteristic(Characteristic.StatusLowBattery)
+                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+          }
+        }
+
+    , batteryVoltageDC:
+        function () {
+          if (!batteryService) return
+          
+          batteryService.getCharacteristic(CommunityTypes.BatteryVoltageDC)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+         }
+
+    , currentTemperature:
+        function () {
+          if (!batteryService) return
+          
+          batteryService.getCharacteristic(Characteristic.CurrentTemperature)
+                       .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
+    , contactSensorState:
+        function () {
+          if (!contactService) return
+
+          contactService.getCharacteristic(Characteristic.ContactSensorState)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
+    , statusActive:
+        function () {
+          if (!contactService) return
+
+          contactService.getCharacteristic(Characteristic.ContactStatusActive)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+        }
+
+    , volts:
+        function () {
+          if (!powerService) return
+
           powerService.getCharacteristic(CommunityTypes.Volts)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
         }
 
     , voltAmperes:
         function () {
+          if (!powerService) return
+          
           powerService.getCharacteristic(CommunityTypes.VoltAmperes)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
          }
 
     , watts:
         function () {
+          if (!powerService) return
+          
           powerService.getCharacteristic(CommunityTypes.Watts)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
         }
 
     , kilowattHours:
         function () {
+          if (!powerService) return
+          
           powerService.getCharacteristic(CommunityTypes.KilowattHours)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
          }
 
     , amperes:
         function () {
+          if (!powerService) return
+          
           powerService.getCharacteristic(CommunityTypes.Amperes)
                         .on('get', function (callback) { self._getState.bind(self)(key, callback) })
          }
-
-    , batteryVoltageDC:
-        function () {
-          powerService.getCharacteristic(CommunityTypes.BatteryVoltageDC)
-                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-         }
-
-    , currentTemperature:
-        function () {
-           powerService.getCharacteristic(Characteristic.CurrentTemperature)
-                          .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-        }
-
-    , batteryLevel:
-      function () {
-        batteryService.getCharacteristic(Characteristic.BatteryLevel)
-                      .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-      }
-
-    , chargingState:
-      function () {
-        batteryService.getCharacteristic(Characteristic.ChargingState)
-                      .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-      }
-
-    , statusLowBattery:
-      function () {
-        batteryService.getCharacteristic(Characteristic.StatusLowBattery)
-                      .on('get', function (callback) { self._getState.bind(self)(key, callback) })
-      }
     }[key] || function () { self.platform.log.warn('setServices: no Service for ' + key) }
     f()
   })
@@ -617,9 +682,6 @@ const PowerService = function (displayName, subtype) {
   this.addCharacteristic(CommunityTypes.Watts)
   this.addCharacteristic(CommunityTypes.KilowattHours)
   this.addCharacteristic(CommunityTypes.Amperes)
-
-  this.addOptionalCharacteristic(CommunityTypes.BatteryVoltageDC)
-  this.addOptionalCharacteristic(Characteristic.CurrentTemperature)
 }
 // https://github.com/homespun/homebridge-accessory-neurio/blob/master/index.js#L143
 PowerService.UUID = '00000001-0000-1000-8000-135D67EC4377'
@@ -723,7 +785,16 @@ const upsMibMap =
 , upsEstimatedChargeRemaining  :
   { name                       : '1.3.6.1.2.1.33.1.2.4.0'
   , capability                 : 'batteryLevel'
-  , normalize                  : upsNormalizers.percentage
+  , normalize                  : 
+    function (properties, key, value) {
+      upsNormalizers.percentage(properties, key, value)
+
+// there doesn't appear to be a way to determine this from the UPS-MIB or the POWERNET-MIB
+      value = properties.batteryLevel === 100
+      properties.chargingState = Characteristic.ChargingState[value ? 'NOT_CHARGING' :  'CHARGING']
+
+      properties.contactSensorState = Characteristic.ContactSensorState[value ? 'CONTACT_DETECTED' : 'CONTACT_NOT_DETECTED']
+    }
   }
 
 , upsBatteryVoltage            :
@@ -788,15 +859,16 @@ const upsMibMap =
 
 const sysObjectIDs =
 { '1.3.6.1.4.1.17095'      : ServersCheck
-/*
 , '1.3.6.1.4.1.318.1.3.27' : UPS
+/*
 , '1.3.6.1.4.1.850.1.1.1'  : UPS
  */
 }
 
 const upsObjectIDs =
-{ '1.3.6.1.4.1.318.1.3.27' : // Schneider Electric
-  { initObjects            : '1.3.6.1.4.1.318.1.1.1.1.2.3'
+{ '1.3.6.1.4.1.318.1.3.27' : // Schneider Electric (APC)
+  { type                   : 'battery'
+  , initObjects            : '1.3.6.1.4.1.318.1.1.1.1.2.3'
   , upsObjects             : '1.3.6.1.4.1.318.1.1.1.4.3.6'
   }
 
