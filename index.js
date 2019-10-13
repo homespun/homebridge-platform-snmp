@@ -3,7 +3,6 @@ const NodeCache   = require('node-cache')
     , arp         = require('arp-a')
     , debug       = require('debug')('homebridge-platform-snmp')
     , discovery   = require('homespun-discovery').observers.snmp
-    , sensorTypes = require('homespun-discovery').utilities.sensortypes
     , snmpn       = require('snmp-native')
     , underscore  = require('underscore')
     , util        = require('util')
@@ -26,6 +25,21 @@ module.exports = function (homebridge) {
 
   util.inherits(PowerService, Service)
 }
+
+
+const PowerService = function (displayName, subtype) {
+  Service.call(this, displayName, '00000001-0000-1000-8000-135D67EC4377', subtype)
+
+  this.addCharacteristic(CommunityTypes.Volts)
+  this.addCharacteristic(CommunityTypes.VoltAmperes)
+  this.addCharacteristic(CommunityTypes.Watts)
+  this.addCharacteristic(CommunityTypes.KilowattHours)
+  this.addCharacteristic(CommunityTypes.Amperes)
+
+  this.addOptionalCharacteristic(Characteristic.Name)
+}
+// https://github.com/homespun/homebridge-accessory-neurio/blob/master/index.js#L143
+PowerService.UUID = '00000001-0000-1000-8000-135D67EC4377'
 
 
 const SNMP = function (log, config, api) {
@@ -222,6 +236,7 @@ const ServersCheck = function (platform, agentId, service) {
 
     if (err) return self.platform.log.error('refresh', underscore.extend({ agentId: self.agentId }, err))
 
+    debug('set properties cache: ' + JSON.stringify(properties, null, 2))
     self.cache.set('properties', properties)
     if (self.accessory) return
 
@@ -239,7 +254,7 @@ ServersCheck.prototype._setServices = function (accessory) {
   const self = this
 
   const findOrCreateService = function (P, callback) {
-    let newP, service
+    let   newP, service
 
     service = accessory.getService(P)
     if (!service) {
@@ -269,11 +284,82 @@ ServersCheck.prototype._setServices = function (accessory) {
            })
          }
 
+    , amperes:
+        function () {
+          findOrCreateService(PowerService, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Energy Monitor')
+            service.getCharacteristic(CommunityTypes.Amperes)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
+    , dewpoint:
+        function () {
+          findOrCreateService(Service.TemperatureSensor, function (service) {
+            service.getCharacteristic(CommunityTypes.DewPoint)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
+    , humidity:
+        function () {
+          findOrCreateService(Service.HumiditySensor, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Humidity')
+            service.getCharacteristic(Characteristic.CurrentRelativeHumidity)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
+    , kilowattHours:
+        function () {
+          findOrCreateService(PowerService, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Energy Monitor')
+            service.getCharacteristic(CommunityTypes.kilowattHours)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
+    , leak_detect:
+        function () {
+          findOrCreateService(Service.LeakSensor, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Leak Detected')
+            service.getCharacteristic(Characteristic.LeakDetected)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
+    , light:
+        function () {
+          findOrCreateService(Service.LightSensor, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Ambient Light')
+            service.getCharacteristic(Characteristic.CurrentAmbientLightLevel)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
+    , motion:
+        function () {
+          findOrCreateService(Service.MotionSensor, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Motion Detected')
+            service.getCharacteristic(Characteristic.MotionDetected)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
     , noise:
         function () {
           findOrCreateService(CommunityTypes.NoiseLevelSensor, function (service) {
             service.setCharacteristic(Characteristic.Name, self.name + ' Noise Level')
             service.getCharacteristic(CommunityTypes.NoiseLevel)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
+    , onoff:
+        function () {
+          findOrCreateService(Service.Switch, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Power Loss')
+            service.getCharacteristic(Characteristic.On)
                    .on('get', function (callback) { self._getState.bind(self)(key, callback) })
            })
         }
@@ -288,6 +374,7 @@ ServersCheck.prototype._setServices = function (accessory) {
                    .on('get', function (callback) { self._getState.bind(self)(key, callback) })
           })
         }
+
     , temperature:
         function () {
           findOrCreateService(Service.TemperatureSensor, function (service) {
@@ -295,6 +382,33 @@ ServersCheck.prototype._setServices = function (accessory) {
             service.getCharacteristic(Characteristic.CurrentTemperature)
                    .on('get', function (callback) { self._getState.bind(self)(key, callback) })
           })
+        }
+
+    , volts:
+        function () {
+          findOrCreateService(PowerService, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Energy Monitor')
+            service.getCharacteristic(CommunityTypes.Volts)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
+    , voltAmperes:
+        function () {
+          findOrCreateService(PowerService, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Energy Monitor')
+            service.getCharacteristic(CommunityTypes.VoltAmperes)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
+    , watts:
+        function () {
+          findOrCreateService(PowerService, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Energy Monitor')
+            service.getCharacteristic(CommunityTypes.Watts)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
         }
     }[key] || function () { self.platform.log.warn('setServices: no Service for ' + key) }
     f()
@@ -340,7 +454,7 @@ ServersCheck.prototype._refresh = function (callback) {
       const leaf = varbind.oid[varbind.oid.length - 2]
 
       if ((leaf % 4) === 1) name = varbind.value
-      else if ((leaf % 4) === 2) underscore.extend(properties, self._normalize(name, varbind.value))
+      else if ((leaf % 4) === 2) self._normalize(properties, name, varbind.value)
     })
 
     oid = self.varbinds[1].value + '.11'
@@ -361,53 +475,118 @@ ServersCheck.prototype._refresh = function (callback) {
 
         if (leaf === 1) names[subtree] = varbind.value
         else if ((leaf === 2) && (!!names[subtree])) {
-          underscore.extend(properties, self._normalize(names[subtree], varbind.value))
+          self._normalize(properties, names[subtree], varbind.value)
         }
       })
 
       self.capabilities = {}
-      underscore.keys(properties).forEach(function (key) { self.capabilities[key] = sensorTypes[key] })
+      underscore.keys(properties).forEach(function (key) { self.capabilities[key] = { field: key } })
       callback(null, properties)
     })
   })
 }
 
 /*
-  name:       Int. Temp/Ext. Temp | Airflow | Sound Meter | Humidity      | Water Detect    | Dust Sensor
-              temperature         | airflow | noise       | humidity      | liquid_detected | particles.2_5
-  units:      'C'                 | m/s     | dB          | RH-%  * 100   | boolean         | mg/m3
-  datapoints: '26.51'             | '0.01'  | '48.93'     | '36.82' / 100 | 'DRY'           | '0.01'
+  name:       Int. Temp/Ext. Temp | Airflow   | Sound Meter | Humidity      | Water Detect    | Dust Sensor
+              temperature         | airflow   | noise       | humidity      | liquid_detected | particles.2_5
+  units:      'C'                 | m/s       | dB          | RH-%          | boolean         | mg/m^3
+  datapoints: '26.51'             | '0.01'    | '48.93'     | '36.82'       | 'DRY'           | '0.01'
 
-not yet:
-PowerFail (power failure)
-Shock (vibration/shock)
-Security (door contact/ security probe)
-Flooding (leak/flooding)
-UndefinedIO (dry contact and I/O probe)
+  name:       Dew Point           | Light     | Shock       | Power Fail     | Motion         | Security
+              dewpoint            | light     | vibration   |                | motion         | contactSensorState
+  units:      'C'                 | lux       | m/s^2       | boolean        | boolean        | boolean
+  datapoints: 43.45               | 17        | 1.06        | 'PWR OK'       | '0.0'          | 'ON'
+
+  name:       Power               | Amp Meter | Watt Meter  | Smoke
+              kilowattHours       | amperes   | watts       | smoke
+  units:      kWh                 | A         | W           | boolean
+  datapoints: 5                   |           |             | 'OK'
 */
-ServersCheck.prototype._normalize = function (name, value) {
-    let f, key
+ServersCheck.prototype._normalize = function (properties, name, value) {
+  let f, key
 
-    key = { Airflow        : 'airflow'
-          , 'Dust Sensor'  : 'particles.2_5'
-          , 'Ext. Temp'    : 'temperature'
-          , Humidity       : 'humidity'
-          , 'Int. Temp'    : 'temperature'
-          , 'Sound Meter'  : 'noise'
-          , 'Water Detect' : 'liquid_detect'
-          }[name]
-    if (!key) return
+  if ((name) && (name.substr(-1) === '1')) name = name.slice(0, -1)
 
-    f = { airflow         : function () { return parseFloat(value)         }
-        , humidity        : function () { return (parseFloat(value) / 100) }
-        , liquid_detect   : function () { return (value !== 'DRY')         }
-        , noise           : function () { return parseFloat(value)         }
-        , 'particles.2_5' : function () { return parseFloat(value)         }
-        , temperature     : function () { return parseFloat(value)         }
-        }[key]
-    if (!f) return
+  key = { Airflow         : 'airflow'
+        , 'Amp Meter'     : 'amperes'
+        , 'Dust Sensor'   : 'particles.2_5'
+        , 'Dew Point'     : 'dewpoint'
+        , 'Ext. Temp'     : 'temperature'
+        , Flooding        : 'leak_detect'
+        , Humidity        : 'humidity'
+        , 'Int. Temp'     : 'temperature'
+        , Light           : 'light'
+        , 'Liquid Detect' : 'leak_detect'
+        , Motion          : 'motion'
+        , Power           : 'kilowattHours'
+        , 'Power Fail'    : 'onoff'
+        , Security        : 'contactSensorState'
+        , Shock           : 'vibration'
+        , Smoke           : 'smoke'
+        , 'Sound Meter'   : 'noise'
+        , 'Water Detect'  : 'leak_detect'
+        , 'Watt Meter'    : 'watts'
+        }[name]
+  if (!key) return
 
-    return underscore.object([ key ], [ f() ])
+  const float = function () {
+    value = parseFloat(value)
+    if (!isNaN(value)) properties[key] = value
+  }
+
+  f = { airflow            : float
+      , amperes            :
+        function () {
+          value = parseFloat(value)
+          if (isNaN(value)) return
+
+          // an AWFUL hack...
+          properties.voltAmperes = 120 * value
+          properties.volts = 120
+
+          properties[key] = value
+        }
+      , contactSensorState :
+        function () {
+          properties[key] = Characteristic.ContactSensorState[(value !== 'OK') ? 'CONTACT_NOT_DETECTED' : 'CONTACT_DETECTED']
+        }
+      , dewpoint           : float
+      , humidity           : float
+      , kilowattHours      : float
+      , light              : float
+      , leak_detect        :
+        function () {
+          properties[key] = Characteristic.LeakDetected[(value !== 'DRY') ? 'LEAK_DETECTED' : 'LEAK_NOT_DETECTED']
+        }
+      , motion             :
+        function () {
+          if (typeof properties.motion === 'undefined') properties.motion = false
+          properties.motion |= value !== '0.00'
+        }
+      , noise              : float
+      , onoff              :
+        function () {
+          properties[key] = value === 'PWR OK'
+        }
+      , 'particles.2_5'    : float
+      , smoke              :
+        function () {
+          properties[key] = Characteristic.SmokeDetected[(value !== 'OK') ? 'SMOKE_DETECTED' : 'SMOKE_NOT_DETECTED']
+        }
+      , temperature        : float
+      , vibration          :
+        function () {
+          value = parseFloat(value)
+          if (isNaN(value)) return
+
+          if (typeof properties.motion === 'undefined') properties.motion = false
+          properties.motion |= (value < 0.75) || (value > 1.25)
+        }
+      , watts              : float
+      }[key]
+  if (!f) return debug('no normalizer for ' + name + ' / ' +  key + ' = ' + value)
+
+  f()
 }
 
 const UPS = function (platform, agentId, service) {
@@ -673,18 +852,6 @@ UPS.prototype._refresh = function (callback) {
     })
   })
 }
-
-const PowerService = function (displayName, subtype) {
-  Service.call(this, displayName, '00000001-0000-1000-8000-135D67EC4377', subtype)
-
-  this.addCharacteristic(CommunityTypes.Volts)
-  this.addCharacteristic(CommunityTypes.VoltAmperes)
-  this.addCharacteristic(CommunityTypes.Watts)
-  this.addCharacteristic(CommunityTypes.KilowattHours)
-  this.addCharacteristic(CommunityTypes.Amperes)
-}
-// https://github.com/homespun/homebridge-accessory-neurio/blob/master/index.js#L143
-PowerService.UUID = '00000001-0000-1000-8000-135D67EC4377'
 
 const upsNormalizers =
 { hundredNonNegativeInteger32 :
