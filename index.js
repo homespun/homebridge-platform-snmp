@@ -293,6 +293,15 @@ ServersCheck.prototype._setServices = function (accessory) {
            })
         }
 
+    , contactSensorState:
+        function () {
+          findOrCreateService(Service.ContactSensor, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Contact')
+            service.getCharacteristic(Characteristic.ContactSensorState)
+                   .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+           })
+        }
+
     , dewpoint:
         function () {
           findOrCreateService(Service.TemperatureSensor, function (service) {
@@ -355,11 +364,11 @@ ServersCheck.prototype._setServices = function (accessory) {
            })
         }
 
-    , onoff:
+    , powerFail:
         function () {
-          findOrCreateService(Service.Switch, function (service) {
-            service.setCharacteristic(Characteristic.Name, self.name + ' Power Loss')
-            service.getCharacteristic(Characteristic.On)
+          findOrCreateService(Service.SecuritySystem, function (service) {
+            service.setCharacteristic(Characteristic.Name, self.name + ' Power Fail')
+            service.getCharacteristic(Characteristic.SecuritySystemCurrentState)
                    .on('get', function (callback) { self._getState.bind(self)(key, callback) })
            })
         }
@@ -506,6 +515,7 @@ ServersCheck.prototype._normalize = function (properties, name, value) {
   let f, key
 
   if ((name) && (name.substr(-1) === '1')) name = name.slice(0, -1)
+  if ((name === '-') || (name === 'Int. Ping')) return
 
   key = { Airflow         : 'airflow'
         , 'Amp Meter'     : 'amperes'
@@ -519,7 +529,7 @@ ServersCheck.prototype._normalize = function (properties, name, value) {
         , 'Liquid Detect' : 'leak_detect'
         , Motion          : 'motion'
         , Power           : 'kilowattHours'
-        , 'Power Fail'    : 'onoff'
+        , 'Power Fail'    : 'powerFail'
         , Security        : 'contactSensorState'
         , Shock           : 'vibration'
         , Smoke           : 'smoke'
@@ -527,7 +537,7 @@ ServersCheck.prototype._normalize = function (properties, name, value) {
         , 'Water Detect'  : 'leak_detect'
         , 'Watt Meter'    : 'watts'
         }[name]
-  if (!key) return
+  if (!key) return this.platform.log.warn('normalize: no entry for ' + name)
 
   const float = function () {
     value = parseFloat(value)
@@ -548,7 +558,7 @@ ServersCheck.prototype._normalize = function (properties, name, value) {
         }
       , contactSensorState :
         function () {
-          properties[key] = Characteristic.ContactSensorState[(value !== 'OK') ? 'CONTACT_NOT_DETECTED' : 'CONTACT_DETECTED']
+          properties[key] = Characteristic.ContactSensorState[(value !== 'ON') ? 'CONTACT_NOT_DETECTED' : 'CONTACT_DETECTED']
         }
       , dewpoint           : float
       , humidity           : float
@@ -564,9 +574,9 @@ ServersCheck.prototype._normalize = function (properties, name, value) {
           properties.motion |= value !== '0.00'
         }
       , noise              : float
-      , onoff              :
+      , powerFail          :
         function () {
-          properties[key] = value === 'PWR OK'
+          properties[key] = Characteristic.SecuritySystemCurrentState[(value !== 'PWR OK') ? 'ALARM_TRIGGERED' : 'STAY_ARM']
         }
       , 'particles.2_5'    : float
       , smoke              :
@@ -587,6 +597,7 @@ ServersCheck.prototype._normalize = function (properties, name, value) {
   if (!f) return debug('no normalizer for ' + name + ' / ' +  key + ' = ' + value)
 
   f()
+  debug(name + ' -> ' + key + ': ' + value)
 }
 
 const UPS = function (platform, agentId, service) {
@@ -620,7 +631,7 @@ util.inherits(UPS, Agent)
 UPS.prototype._setServices = function (accessory) {
   const self = this
 
-  let batteryService, contactService, powerService
+  let alarmService, batteryService, contactService, powerService
 
   const findOrCreateService = function (P, callback) {
     let newP, service
@@ -644,6 +655,11 @@ UPS.prototype._setServices = function (accessory) {
   })
 
   if (self.upsObject.type === 'battery') {
+    findOrCreateService(Service.SecuritySystem, function (service) {
+      alarmService = service
+
+      service.setCharacteristic(Characteristic.Name, self.name + ' Battery Fail')
+    })
     findOrCreateService(Service.BatteryService, function (service) {
       batteryService = service
 
@@ -665,7 +681,15 @@ UPS.prototype._setServices = function (accessory) {
 
   underscore.keys(self.capabilities).forEach(function (key) {
     const f =
-    { batteryLevel:
+    { batteryFail:
+        function () {
+          if (alarmService) {
+            alarmService.getCharacteristic(Characteristic.SecuritySystemCurrentState)
+                        .on('get', function (callback) { self._getState.bind(self)(key, callback) })
+          }
+        }
+
+    , batteryLevel:
         function () {
           if (!batteryService) return
 
@@ -946,6 +970,7 @@ const upsMibMap =
       if (isNaN(value) || (value < 2) || (value > 4)) return
 
       properties[key] = Characteristic.StatusLowBattery[(value !== 2) ? 'BATTERY_LEVEL_LOW' : 'BATTERY_LEVEL_NORMAL']
+      properties.batteryFail = Characteristic.SecuritySystemCurrentState[(value !== 2) ? 'ALARM_TRIGGERED' : 'STAY_ARM']
     }
   }
 
