@@ -200,7 +200,7 @@ Agent.prototype._getState = function (property, callback) {
         value =  properties[property]
       }
 
-      debug('getState ' + property + ': ' + value)
+      debug(self.rinfo.host + ' getState ' + property + ': ' + value)
       return value
     }
 
@@ -215,7 +215,10 @@ Agent.prototype._getState = function (property, callback) {
         return callback(err)
       }
 
-      if (properties) self.cache.set('properties', properties)
+      if (properties) {
+        debug(self.rinfo.host + ' set properties cache: ' + JSON.stringify(properties, null, 2))
+        self.cache.set('properties', properties)
+      }
 
       callback(null, f(properties, false))
     })
@@ -236,7 +239,7 @@ const ServersCheck = function (platform, agentId, service) {
 
     if (err) return self.platform.log.error('refresh', underscore.extend({ agentId: self.agentId }, err))
 
-    debug('set properties cache: ' + JSON.stringify(properties, null, 2))
+    debug(self.rinfo.host + ' set properties cache: ' + JSON.stringify(properties, null, 2))
     self.cache.set('properties', properties)
     if (self.accessory) return
 
@@ -614,7 +617,7 @@ const UPS = function (platform, agentId, service) {
 
     if (err) return self.platform.log.error('refresh', underscore.extend({ agentId: self.agentId }, err))
 
-    debug('set properties cache: ' + JSON.stringify(properties, null, 2))
+    debug(self.rinfo.host + ' set properties cache: ' + JSON.stringify(properties, null, 2))
     self.cache.set('properties', properties)
     if (self.accessory) return
 
@@ -970,7 +973,9 @@ const upsMibMap =
       if (isNaN(value) || (value < 2) || (value > 4)) return
 
       properties[key] = Characteristic.StatusLowBattery[(value !== 2) ? 'BATTERY_LEVEL_LOW' : 'BATTERY_LEVEL_NORMAL']
+/*
       properties.batteryFail = Characteristic.SecuritySystemCurrentState[(value !== 2) ? 'ALARM_TRIGGERED' : 'STAY_ARM']
+ */
     }
   }
 
@@ -1046,6 +1051,23 @@ const upsMibMap =
   , capability                 : 'watts'
   , normalize                  : upsNormalizers.hundredNonNegativeInteger32
   }
+, upsAdvBatteryReplaceIndicator:
+  { name                       : '1.3.6.1.4.1.318.1.1.1.2.2.4.0'
+  , capability                 : 'batteryFail'
+  , normalize                  : 
+    function (properties, key, value) {
+console.log('!!! upsAdvBatteryReplaceIndicator: ' + value)
+      value = parseInt(value, 10)
+
+/*
+    noBatteryNeedsReplacing(1),
+    batteryNeedsReplacing(2)
+ */
+      if (isNaN(value) || (value < 1) || (value > 2)) return
+
+      properties[key] = Characteristic.SecuritySystemCurrentState[(value !== 1) ? 'ALARM_TRIGGERED' : 'STAY_ARM']
+    }
+  }
 }
 
 
@@ -1061,7 +1083,7 @@ const upsObjectIDs =
 { '1.3.6.1.4.1.318.1.3.27' : // Schneider Electric (APC)
   { type                   : 'battery'
   , initObjects            : '1.3.6.1.4.1.318.1.1.1.1.2.3'
-  , upsObjects             : '1.3.6.1.4.1.318.1.1.1.4.3.6'
+  , upsObjects             : '1.3.6.1.4.1.318.1.1.1'
   }
 
 , '1.3.6.1.4.1.850.1.1.1'  : // Tripp-Lite
