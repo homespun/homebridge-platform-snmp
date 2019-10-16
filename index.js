@@ -1056,7 +1056,6 @@ const upsMibMap =
   , capability                 : 'batteryFail'
   , normalize                  : 
     function (properties, key, value) {
-console.log('!!! upsAdvBatteryReplaceIndicator: ' + value)
       value = parseInt(value, 10)
 
 /*

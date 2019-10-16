@@ -1,6 +1,6 @@
 {
   "name": "homebridge-platform-snmp",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "An SNMP platform plugin for Homebridge: https://github.com/nfarina/homebridge",
   "author": {
     "name": "Marshall Rose",
